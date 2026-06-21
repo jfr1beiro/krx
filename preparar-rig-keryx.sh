@@ -2,7 +2,8 @@
 set -Eeuo pipefail
 
 # ============================================================
-# PREPARAÇÃO DE RIG HIVEOS PARA KERYX
+# PREPARAÇÃO DE RIG HIVEOS PARA KERYX (SOLO via node próprio / Tailscale)
+# - Garante o Tailscale conectado e o node acessível
 # - Limpa espaço em disco (preservando o escrow)
 # - Atualiza o driver NVIDIA para a série 580
 # - Atualiza o CUDA runtime para a série 13
@@ -13,6 +14,8 @@ KEEP_DIR='/hive/KEEP_ESCROW'
 CUSTOM_DIR='/hive/miners/custom'
 DRIVER_TARGET='580'
 CUDA_PKG='cuda-runtime-13-3'
+NODE_IP='100.111.122.11'
+NODE_PORT='22112'
 
 section() {
   printf '\n============================================================\n %s\n============================================================\n' "$*"
@@ -27,6 +30,82 @@ fail() {
 
 mkdir -p "$KEEP_DIR"
 chmod 700 "$KEEP_DIR"
+
+# ------------------------------------------------------------
+section "0a. PREPARANDO TAILSCALE"
+# ------------------------------------------------------------
+
+command -v curl >/dev/null 2>&1 || {
+  apt-get update
+  DEBIAN_FRONTEND=noninteractive apt-get install -y curl ca-certificates
+}
+
+mkdir -p /dev/net /etc/modules-load.d /run/tailscale /var/lib/tailscale
+printf 'tun\n' >/etc/modules-load.d/tun.conf
+modprobe tun 2>/dev/null || true
+
+if [ ! -c /dev/net/tun ]; then
+  mknod /dev/net/tun c 10 200 2>/dev/null || true
+  chmod 600 /dev/net/tun 2>/dev/null || true
+fi
+
+if [ ! -c /dev/net/tun ]; then
+  printf '\nAVISO: /dev/net/tun não está disponível. O Tailscale pode não funcionar.\n'
+fi
+
+if ! command -v tailscale >/dev/null 2>&1 || ! command -v tailscaled >/dev/null 2>&1; then
+  printf 'Instalando Tailscale...\n'
+  curl -fsSL https://tailscale.com/install.sh | sh
+fi
+
+systemctl unmask tailscaled 2>/dev/null || true
+systemctl daemon-reload
+systemctl enable tailscaled >/dev/null 2>&1 || true
+systemctl restart tailscaled
+
+for _ in $(seq 1 20); do
+  { [ -S /run/tailscale/tailscaled.sock ] || [ -S /var/run/tailscale/tailscaled.sock ]; } && break
+  sleep 1
+done
+
+if ! systemctl is-active --quiet tailscaled; then
+  printf '\nAVISO: tailscaled não iniciou corretamente.\n'
+  systemctl status tailscaled --no-pager -l || true
+  journalctl -u tailscaled -n 40 --no-pager || true
+fi
+
+if ! tailscale ip -4 2>/dev/null | grep -q '^100\.'; then
+  printf '\nAutorize esta rig no Tailscale usando a URL exibida abaixo.\n\n'
+  tailscale up --reset --hostname="$(hostname)" --accept-dns=false
+fi
+
+if tailscale ip -4 2>/dev/null | grep -q '^100\.'; then
+  printf 'Tailscale conectado: %s\n' "$(tailscale ip -4 | head -n1)"
+else
+  printf '\nAVISO: Tailscale não ficou conectado. O minerador solo não vai alcançar o node até isso ser resolvido.\n'
+fi
+
+# ------------------------------------------------------------
+section "0b. TESTANDO O NODE ($NODE_IP:$NODE_PORT)"
+# ------------------------------------------------------------
+
+NODE_OK=0
+for tentativa in 1 2 3 4 5; do
+  if timeout 7 bash -c "exec 3<>/dev/tcp/$NODE_IP/$NODE_PORT" 2>/dev/null; then
+    NODE_OK=1
+    break
+  fi
+  printf 'Tentativa %s/5 sem resposta do node.\n' "$tentativa"
+  tailscale ping -c 1 "$NODE_IP" 2>/dev/null || true
+  sleep 3
+done
+
+if [ "$NODE_OK" -eq 1 ]; then
+  printf 'Node acessível em %s:%s\n' "$NODE_IP" "$NODE_PORT"
+else
+  printf '\nAVISO: node inacessível em %s:%s. O minerador pode falhar ao iniciar.\n' "$NODE_IP" "$NODE_PORT"
+  printf 'Verifique se o node está rodando e se o Tailscale autorizou esta rig.\n'
+fi
 
 # ------------------------------------------------------------
 section "0. BACKUP DE SEGURANÇA DO ESCROW (antes de qualquer limpeza)"
@@ -213,6 +292,8 @@ if [ "${DRIVER_CHANGED:-0}" -eq 1 ]; then
   section "RESUMO FINAL"
   printf 'Driver alvo: série %s (reboot pendente)\n' "$DRIVER_TARGET"
   printf 'CUDA instalado: %s\n' "$CUDA_PKG"
+  printf 'Node: %s:%s\n' "$NODE_IP" "$NODE_PORT"
+  printf 'Tailscale: %s\n' "$(tailscale ip -4 2>/dev/null | head -n1 || echo 'não conectado')"
   printf 'Escrow preservado em: %s/escrow.key\n' "$KEEP_DIR"
   printf 'Espaço em disco final:\n'
   df -h / || true
@@ -223,7 +304,19 @@ fi
 section "8. INICIANDO O MINERADOR"
 # ------------------------------------------------------------
 
-printf 'Nenhum reboot pendente. Iniciando o minerador agora...\n\n'
+printf 'Nenhum reboot pendente. Verificando conectividade antes de iniciar...\n\n'
+
+if ! tailscale ip -4 2>/dev/null | grep -q '^100\.'; then
+  printf 'AVISO: Tailscale não está conectado agora. Tentando reconectar...\n'
+  tailscale up --accept-dns=false || true
+fi
+
+if ! timeout 7 bash -c "exec 3<>/dev/tcp/$NODE_IP/$NODE_PORT" 2>/dev/null; then
+  printf 'AVISO: node %s:%s ainda inacessível. O minerador será iniciado mesmo assim,\n' "$NODE_IP" "$NODE_PORT"
+  printf 'mas pode falhar até a conectividade ser restabelecida.\n'
+fi
+
+printf '\nIniciando o minerador agora...\n\n'
 
 miner start || true
 sleep 5
@@ -238,6 +331,8 @@ fi
 section "RESUMO FINAL"
 printf 'Driver alvo: série %s\n' "$DRIVER_TARGET"
 printf 'CUDA instalado: %s\n' "$CUDA_PKG"
+printf 'Node: %s:%s\n' "$NODE_IP" "$NODE_PORT"
+printf 'Tailscale: %s\n' "$(tailscale ip -4 2>/dev/null | head -n1 || echo 'não conectado')"
 printf 'Escrow preservado em: %s/escrow.key\n' "$KEEP_DIR"
 printf 'Espaço em disco final:\n'
 df -h / || true
