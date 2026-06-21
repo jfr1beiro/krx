@@ -132,28 +132,38 @@ section "4. ATUALIZANDO O DRIVER NVIDIA PARA A SÉRIE $DRIVER_TARGET"
 CURRENT_DRIVER="$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -n1)"
 printf 'Driver atual: %s\n' "${CURRENT_DRIVER:-desconhecido}"
 
-if command -v nvidia-driver-update >/dev/null 2>&1; then
-  printf '\nVersões de driver disponíveis:\n'
-  nvidia-driver-update --list || true
+DRIVER_CHANGED=0
+
+if [[ "$CURRENT_DRIVER" == "${DRIVER_TARGET}."* ]]; then
+  printf '\nO driver já está na série %s (%s). Nenhuma alteração necessária.\n' "$DRIVER_TARGET" "$CURRENT_DRIVER"
+elif command -v nvidia-driver-update >/dev/null 2>&1; then
+  printf '\nVersões de driver disponíveis (apenas leitura, sem interação):\n'
+  # --list é interativo (abre prompt "Enter the version to install").
+  # Redirecionamos um Enter vazio para capturar a listagem sem travar
+  # o script esperando input do usuário.
+  LIST_OUTPUT="$(printf '\n' | nvidia-driver-update --list 2>/dev/null || true)"
+  printf '%s\n' "$LIST_OUTPUT"
 
   TARGET_VERSION="$(
-    nvidia-driver-update --list 2>/dev/null \
+    printf '%s\n' "$LIST_OUTPUT" \
       | grep -oE "${DRIVER_TARGET}\.[0-9]+\.[0-9]+" \
       | sort -V \
       | tail -n1
   )"
 
   if [ -n "$TARGET_VERSION" ]; then
-    printf '\nInstalando driver %s...\n' "$TARGET_VERSION"
-    nvidia-driver-update "$TARGET_VERSION"
+    printf '\nInstalando driver %s (não-interativo)...\n' "$TARGET_VERSION"
+    printf '%s\n' "$TARGET_VERSION" | nvidia-driver-update "$TARGET_VERSION" </dev/null || true
     DRIVER_CHANGED=1
   else
-    printf '\nAVISO: nenhuma versão %s.x encontrada na lista. Driver não alterado.\n' "$DRIVER_TARGET"
-    DRIVER_CHANGED=0
+    printf '\nAVISO: nenhuma versão %s.x disponível no catálogo do nvidia-driver-update.\n' "$DRIVER_TARGET"
+    printf 'Como o driver atual (%s) já é diferente do alvo, a troca precisa ser feita manualmente:\n' "${CURRENT_DRIVER:-desconhecido}"
+    printf '  nvidia-driver-update --list\n'
+    printf '  nvidia-driver-update <versao_580.x_desejada>\n'
+    printf 'Script seguirá sem alterar o driver.\n'
   fi
 else
   printf '\nAVISO: nvidia-driver-update não encontrado neste sistema. Pulei a etapa de driver.\n'
-  DRIVER_CHANGED=0
 fi
 
 # ------------------------------------------------------------
