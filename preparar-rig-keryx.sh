@@ -200,16 +200,39 @@ section "7. PRÓXIMO PASSO"
 # ------------------------------------------------------------
 
 if [ "${DRIVER_CHANGED:-0}" -eq 1 ]; then
-  printf '\nO driver NVIDIA foi atualizado. É NECESSÁRIO reiniciar a rig agora:\n'
+  printf '\nO driver NVIDIA foi atualizado. É NECESSÁRIO reiniciar a rig agora.\n'
+  printf 'O script NÃO vai iniciar o minerador automaticamente neste caso,\n'
+  printf 'pois o driver novo só é aplicado de fato após o reboot.\n'
+  printf '\nExecute manualmente:\n'
   printf '  reboot\n'
-  printf '\nApós o reboot, confirme com:\n'
+  printf '\nApós o reboot, confirme o driver e inicie o minerador com:\n'
   printf '  nvidia-smi --query-gpu=driver_version --format=csv\n'
-  printf 'E então reinicie o minerador:\n'
-  printf '  miner restart && miner\n'
+  printf '  miner start\n'
+  printf '  miner\n'
+
+  section "RESUMO FINAL"
+  printf 'Driver alvo: série %s (reboot pendente)\n' "$DRIVER_TARGET"
+  printf 'CUDA instalado: %s\n' "$CUDA_PKG"
+  printf 'Escrow preservado em: %s/escrow.key\n' "$KEEP_DIR"
+  printf 'Espaço em disco final:\n'
+  df -h / || true
+  exit 0
+fi
+
+# ------------------------------------------------------------
+section "8. INICIANDO O MINERADOR"
+# ------------------------------------------------------------
+
+printf 'Nenhum reboot pendente. Iniciando o minerador agora...\n\n'
+
+miner start || true
+sleep 5
+
+if pgrep -af '[k]eryx-miner' >/dev/null 2>&1; then
+  printf 'Minerador em execução.\n'
 else
-  printf '\nNenhuma alteração de driver foi necessária ou ela falhou (verifique acima).\n'
-  printf 'Reinicie o minerador para aplicar o CUDA atualizado:\n'
-  printf '  miner restart && miner\n'
+  printf 'AVISO: não foi possível confirmar o processo do minerador via pgrep.\n'
+  printf 'Verifique manualmente com: miner\n'
 fi
 
 section "RESUMO FINAL"
@@ -218,3 +241,9 @@ printf 'CUDA instalado: %s\n' "$CUDA_PKG"
 printf 'Escrow preservado em: %s/escrow.key\n' "$KEEP_DIR"
 printf 'Espaço em disco final:\n'
 df -h / || true
+
+printf '\nAbrindo a visualização em tempo real do minerador (tela "miner").\n'
+printf 'Para sair da tela sem parar o minerador, use: Ctrl+a depois d\n\n'
+sleep 2
+
+exec miner
