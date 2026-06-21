@@ -47,6 +47,17 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 section "0. SUA WALLET KERYX (KRX)"
 # ------------------------------------------------------------
 
+printf 'Você já precisa ter uma wallet Keryx criada ANTES de continuar.\n'
+printf 'Se ainda não tem uma, pare agora e:\n\n'
+printf '  1. Abra no navegador: https://keryx-labs.com/wallet\n'
+printf '  2. Crie sua wallet e GUARDE a frase/chave de recuperação em local seguro\n'
+printf '     (sem ela, ninguém — nem você — recupera o acesso depois).\n'
+printf '  3. Copie o endereço gerado (formato: keryx:....)\n'
+printf '  4. Só então volte aqui e cole o endereço quando for solicitado.\n\n'
+printf 'Se você já tem uma wallet, pode seguir normalmente.\n\n'
+
+read -rp 'Pressione ENTER para continuar (ou Ctrl+C para sair e criar sua wallet primeiro)...' _UNUSED
+
 WALLET="${1:-}"
 
 if [ -z "$WALLET" ]; then
@@ -230,7 +241,31 @@ mkdir -p "$CUSTOM_DIR/keryx-miner"
 cp -a "$INSTALL_DIR"/. "$CUSTOM_DIR/keryx-miner"/
 
 # ------------------------------------------------------------
-section "6. RESUMO DA CONFIGURAÇÃO"
+section "6. FLIGHT SHEET PARA O PAINEL HIVEOS"
+# ------------------------------------------------------------
+
+FLIGHTSHEET_FILE="/hive/keryx-baikalmine-flightsheet-${WORKER_NAME}.json"
+USER_CONFIG="--threads 0 --keryxd-address stratum+tcp://${POOL_URL}:${POOL_PORT} --mining-address %WAL%.%WORKER_NAME%"
+
+cat >"$FLIGHTSHEET_FILE" <<EOF
+{"name":"BaikalMine KRX - ${WORKER_NAME}","isFavorite":false,"items":[{"coin":"KRX","pool_ssl":false,"wal_id":null,"dpool_ssl":false,"miner":"custom","miner_alt":"${CUSTOM_NAME}","miner_config":{"url":"stratum+tcp://${POOL_URL}:${POOL_PORT}","miner":"${CUSTOM_NAME}","template":"%WAL%.%WORKER_NAME%","install_url":"${MINER_URL}","user_config":"${USER_CONFIG}"},"pool_geo":[]}]}
+EOF
+
+printf 'Arquivo de Flight Sheet gerado em: %s\n\n' "$FLIGHTSHEET_FILE"
+printf 'Para usar pelo PAINEL WEB da HiveOS (recomendado — assim a rig aparece\n'
+printf 'normalmente nas estatísticas e tem auto-restart gerenciado pela Hive):\n\n'
+printf '  1. Acesse o painel da HiveOS (https://the.hiveos.farm)\n'
+printf '  2. Vá em Flight Sheets > Create Flight Sheet > Import from Clipboard\n'
+printf '  3. Cole o conteúdo do arquivo %s\n' "$FLIGHTSHEET_FILE"
+printf '  4. Confirme/adicione sua wallet %s no campo de wallet do Flight Sheet\n' "$WALLET"
+printf '  5. Aplique o Flight Sheet nesta rig\n'
+printf '  6. Use os comandos normais da Hive: miner start / miner stop / miner\n\n'
+printf 'Conteúdo do JSON (para copiar diretamente, se preferir):\n\n'
+cat "$FLIGHTSHEET_FILE"
+printf '\n'
+
+# ------------------------------------------------------------
+section "7. RESUMO DA CONFIGURAÇÃO"
 # ------------------------------------------------------------
 
 printf 'Pool: %s:%s\n' "$POOL_URL" "$POOL_PORT"
@@ -242,16 +277,32 @@ printf 'Driver NVIDIA: %s\n' "$(nvidia-smi --query-gpu=driver_version --format=c
 if [ "$DRIVER_CHANGED" -eq 1 ]; then
   printf '\nO driver foi atualizado. É necessário reiniciar a rig antes de minerar:\n'
   printf '  reboot\n'
-  printf '\nApós o reboot, inicie com:\n'
+  printf '\nApós o reboot, use a Flight Sheet gerada acima pelo painel da Hive,\n'
+  printf 'ou inicie manualmente para teste com:\n'
   printf '  cd %s && ./h-run.sh\n' "$INSTALL_DIR"
   exit 0
 fi
 
 # ------------------------------------------------------------
-section "7. INICIANDO A MINERAÇÃO"
+section "8. TESTE IMEDIATO (OPCIONAL)"
 # ------------------------------------------------------------
 
-printf 'Iniciando o minerador na pool Baikalmine...\n\n'
+printf 'O caminho recomendado é aplicar a Flight Sheet gerada acima pelo painel\n'
+printf 'da HiveOS — assim a Hive gerencia start/stop/restart e estatísticas.\n\n'
+printf 'Se quiser apenas testar agora, direto neste terminal (sem usar a Flight\n'
+printf 'Sheet), o minerador pode ser iniciado manualmente em modo de teste.\n\n'
+
+read -rp 'Deseja iniciar um teste manual agora? [s/N]: ' START_NOW
+case "$START_NOW" in
+  s|S|y|Y) ;;
+  *)
+    printf '\nTeste manual não iniciado. Use a Flight Sheet pelo painel da Hive\n'
+    printf 'quando estiver pronto.\n'
+    exit 0
+    ;;
+esac
+
+printf '\nIniciando teste manual na pool Baikalmine...\n\n'
 
 cd "$INSTALL_DIR"
 nohup ./h-run.sh >>"$LOG_FILE" 2>&1 &
