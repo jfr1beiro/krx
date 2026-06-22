@@ -28,7 +28,7 @@ DRIVER_TARGET='580'
 CUDA_PKG='cuda-runtime-13-3'
 
 CUSTOM_NAME='keryx-miner-v0.1.2.6-OPoI'
-MINER_URL='https://github.com/BaikalMine/krx-miner/releases/download/v0.1.2.6-beta/keryx-miner-v0.1.2.6-OPoI-hiveos.tar.gz'
+MINER_URL='https://github.com/BaikalMine/krx-miner/releases/download/v0.1.3.1/keryx-miner-v0.1.3.1-OPoI-hiveos.tar.gz'
 INSTALL_DIR="/hive/miners/custom/$CUSTOM_NAME"
 CUSTOM_DIR='/hive/miners/custom'
 KEEP_DIR='/hive/KEEP_ESCROW'
