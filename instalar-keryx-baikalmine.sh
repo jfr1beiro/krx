@@ -202,7 +202,8 @@ find /var/log -type f -name "*.log.*" -delete 2>/dev/null || true
 find /var/log -type f -name "*.gz" -delete 2>/dev/null || true
 find /var/log/miner -type f -name "*.log" -mtime +3 -delete 2>/dev/null || true
 rm -rf /root/.cache /home/*/.cache 2>/dev/null || true
-rm -rf /tmp/keryx-install-* 2>/dev/null || true
+# Remove temps de execuções ANTERIORES, mas nunca o desta execução ($$).
+find /tmp -maxdepth 1 -type d -name 'keryx-install-*' ! -name "keryx-install-$$" -exec rm -rf {} + 2>/dev/null || true
 
 # Trava de segurança: antes de remover qualquer diretório de versão antiga,
 # garante que TODO escrow dentro dele já está no backup. Se algum não estiver,
@@ -258,6 +259,9 @@ section "3. INSTALANDO O MINERADOR (BaikalMine/krx-miner $CUSTOM_NAME)"
 # ------------------------------------------------------------
 
 mkdir -p "$INSTALL_DIR" "$LOG_DIR"
+
+# Garante que o diretório temporário exista (a limpeza pode tê-lo afetado).
+mkdir -p "$TMP_DIR"
 
 printf 'Baixando %s...\n' "$MINER_URL"
 curl -fL --retry 10 --retry-delay 5 --connect-timeout 30 \
