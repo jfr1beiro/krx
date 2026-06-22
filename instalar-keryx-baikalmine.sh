@@ -300,6 +300,28 @@ set -o pipefail
 DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
 cd "\$DIR" || exit 1
 
+POOL_HOST="${POOL_URL}"
+
+# Aguarda a rede/DNS ficarem prontos antes de iniciar (evita a corrida de boot
+# "Temporary failure in name resolution" logo após reiniciar a rig).
+for i in \$(seq 1 30); do
+  if getent hosts "\$POOL_HOST" >/dev/null 2>&1; then
+    echo "DNS ok: \$POOL_HOST resolvido."
+    break
+  fi
+  echo "aguardando rede/DNS resolver \$POOL_HOST... (\$i/30)"
+  sleep 2
+done
+
+# Último recurso: se ainda não resolve e não há nameserver configurado,
+# adiciona DNS público (não sobrescreve um resolv.conf já configurado).
+if ! getent hosts "\$POOL_HOST" >/dev/null 2>&1; then
+  if ! grep -q '^nameserver' /etc/resolv.conf 2>/dev/null; then
+    echo "sem nameserver — adicionando DNS público como fallback."
+    printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' >> /etc/resolv.conf 2>/dev/null || true
+  fi
+fi
+
 stdbuf -oL -eL "\$DIR/keryx-miner" \\
   --threads 0 \\
   --keryxd-address stratum+tcp://${POOL_URL}:${POOL_PORT} \\
